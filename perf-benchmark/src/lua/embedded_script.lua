@@ -33,7 +33,7 @@ double c_payload(double n);
 
 local payload = require("lua_payload")
 
------------------------------------------------
+-- CONFIGURE HERE -----------------------------
 config{use_jit=true, time=60}
 -----------------------------------------------
 
