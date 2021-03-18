@@ -1,0 +1,15 @@
+#!/bin/bash
+
+if [ $# -lt 2 ]
+then
+    echo "usage $0 luajit_path install_prefix"
+    exit 1
+fi
+
+echo "Luajit path: $1\n
+Installation path: $2\n"
+
+cmake -S $1 -B $1
+cmake --build $1
+
+cmake --install $1 --prefix $2
