@@ -5,6 +5,11 @@ target_sources(c_payload
   PRIVATE
     payload.c
   )
+add_custom_command(TARGET c_payload
+  POST_BUILD
+  COMMAND cp ARGS ${CMAKE_CURRENT_BINARY_DIR}/libc_payload.so
+                  ${CMAKE_SOURCE_DIR}/lib/libc_payload.so
+  )
 
 #----------------------------------------------------------------------------#
 

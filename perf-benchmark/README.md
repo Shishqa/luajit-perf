@@ -5,9 +5,6 @@ $ mkdir build
 $ cd build
 $ cmake ..
 $ cmake --build .
-
-# todo: automate
-$ cp src/libc_payload.so ../lib/libc_payload.so
 ```
 
 ## Configuring benchmark
