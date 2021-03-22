@@ -3,6 +3,9 @@
 ```bash
 $ git clone ...
 $ git submodule update --init --recursive
+$ ./scripts/export-luajit ./luajit ./perf-benchmark
+$ cd perf-benchmark
+$ lj-env . ./bin/luajit --version
 ```
 
 ## Scripts
