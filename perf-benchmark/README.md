@@ -13,7 +13,7 @@ To build luaJIT with perf tools support add flag `-DLUAJIT_USE_PERFTOOLS`
 
 ## Configuring benchmark
 
-[not so convenient](./src/lua/embedded_script.lua)
+[not so convenient](./src/lua/run_payloads.lua)
 ```lua
 -- CONFIGURE HERE -----------------------------
 config{use_jit=true, time=60}
