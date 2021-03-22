@@ -23,8 +23,11 @@ function config(args)
     print("\t-time: "..benchmark_time.." sec");
 end
 
------------------------------------------------
+-- CONFIGURE HERE -----------------------------
+config{use_jit=true, time=100500}
 
+-----------------------------------------------
+-- mind project-specific package location --
 c_payload = ffi.load("lib/libc_payload.so")
 
 ffi.cdef[[
@@ -33,16 +36,13 @@ double c_payload(double n);
 
 local payload = require("lua_payload")
 
--- CONFIGURE HERE -----------------------------
-config{use_jit=true, time=100500}
------------------------------------------------
+------------------------------------------------
 
 print("- running...")
 
 local start_time = os.clock()
 
 local i = 0
---   v-overhead?-v
 while os.clock() - start_time < benchmark_time do
     if i % 2 == 0 then
         c_payload.c_payload(15)
