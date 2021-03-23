@@ -1,4 +1,10 @@
 #!/bin/bash
 
-perf record -F 99 -g lj-env . $@
+echo "Starting profile record..."
 
+if type "lj-env" >/dev/null 2>/dev/null; 
+then
+  perf record -F 99 -g lj-env . $@
+else
+  echo "lj-env not found in PATH. Exiting..."
+fi
