@@ -9,10 +9,10 @@
 
 enum CONSTANTS { STACKTRACE_DEPTH = -100 };
 
-FILE* stacktrace = NULL;
-
 void profile_callback(void* data, lua_State* L, int samples, int vmstate) {
   size_t dumpstr_len = 0;
+  FILE* stacktrace = (FILE*) data;
+
   const char* stack_dump =
       luaJIT_profile_dumpstack(L, "F;", STACKTRACE_DEPTH, &dumpstr_len);
 
@@ -27,13 +27,14 @@ int main(int argc, char* argv[]) {
 
   printf("pid: %d\n", getpid());
 
-  stacktrace = fopen(argv[2], "w");
+  FILE* stacktrace = fopen(argv[2], "w");
+  assert(stacktrace != NULL);
 
   lua_State* L = luaL_newstate();
   assert(NULL != L);
   luaL_openlibs(L);
 
-  luaJIT_profile_start(L, "f", profile_callback, NULL);
+  luaJIT_profile_start(L, "f", profile_callback, (void*)stacktrace);
 
   int error = luaL_loadfile(L, argv[1]) || lua_pcall(L, 0, 0, 0);
   if (error) {
