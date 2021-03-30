@@ -19,7 +19,7 @@ To build luaJIT with perf tools support add flag `-DLUAJIT_USE_PERFTOOLS`
 config{use_jit=true, time=60}
 ```
 
-## Running benchmark
+## Running benchmark for perf
 
 ```bash
 $ record-profile ./bin/run_embedded src/lua/run_payloads.lua
@@ -27,4 +27,9 @@ $ record-profile ./bin/run_embedded src/lua/run_payloads.lua
 $ record-profile ./bin/luajit src/lua/run_payloads.lua
 
 $ make-flamegraph <flamegraph-name>
+```
+
+## Running benchmark for custom profiler
+``` bash
+$ lj-env . ./bin/run_embedded src/lua/run_payloads.lua out.nofold
 ```

@@ -24,4 +24,7 @@ $ lj-env . ./bin/luajit --version
 
   Warning: it depends on `$BROWSER` environment variable to display flamegraph
 
+- `fold.py` folds call chains acquired by profiler
+  usage: `fold.py out.nofold > out.fold`
+
 > for convenience script folder can be added to `$PATH`
