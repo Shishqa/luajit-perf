@@ -1,3 +1,0 @@
-[submodule "luajit"]
-	path = luajit
-	url = git@github.com:tarantool/luajit.git

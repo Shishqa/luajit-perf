@@ -1,31 +1,52 @@
-## Install
+# Simple benchmark
 
+## Usage
+
+#### 1. Export LuaJIT
+
+Find your favourite build of luaJIT and export it to the project with
 ```bash
-$ git clone ...
-$ git submodule update --init --recursive
-$ ./scripts/export-luajit ./luajit ./perf-benchmark
-$ cd perf-benchmark
-$ lj-env . ./bin/luajit --version
+$ ./scripts/export-luajit <path-to-luajit-repo-root> .
 ```
 
-## Scripts
-- `export-luajit` builds luajit and installs it to specified directory
+#### 2. Build benchmark
 
-  usage: `export-luajit <luajit_folder> <install_prefix>`
+```bash
+$ mkdir build
+$ cd build
+$ cmake ..
+$ cmake --build .
+```
 
-- `lj-env` sets `LUA_PATH` and `LUA_CPATH` according to `<install_prefix>`
+#### 3. Run
 
-  usage: `lj-env <install_prefix> <command> [args...]`
+```bash
+$ lj-env .luaenv ./bin/run_benchmark
+```
 
-- `record-profile` runs `perf record` inside luajit environment set by `lj-env`
+### Building LuaJIT with perf tools support
 
-- `make-flamegraph` exports `perf report` as flamegraph to `./flamegraphs/` 
-  folder
+To build luaJIT with perf tools support add flag `-DLUAJIT_USE_PERFTOOLS`
 
-  Warning: it depends on `$BROWSER` environment variable to display flamegraph
+## Configuring benchmark
 
-- `fold.py` folds call chains acquired by profiler
+[not so convenient](./src/run_payloads.lua)
+```lua
+-- CONFIGURE HERE -----------------------------
+config{use_jit=true, time=60}
+```
 
-  usage: `fold.py out.nofold > out.fold`
+## Running benchmark for perf
 
-> for convenience script folder can be added to `$PATH`
+```bash
+$ record-profile ./bin/run_benchmark
+# or
+$ record-profile ./.luaenv/bin/luajit src/lua/run_payloads.lua
+
+$ make-flamegraph <flamegraph-name>
+```
+
+## Running benchmark for custom profiler
+``` bash
+$ lj-env . ./bin/run_embedded src/lua/run_payloads.lua out.nofold
+```

@@ -23,12 +23,9 @@ function config(args)
     print("\t-time: "..benchmark_time.." sec");
 end
 
--- CONFIGURE HERE -----------------------------
-config{use_jit=true, time=100500}
-
 -----------------------------------------------
 -- mind project-specific package location --
-c_payload = ffi.load("lib/libc_payload.so")
+c_payload = ffi.load("c_payload")
 
 ffi.cdef[[
 double c_payload(double n);
@@ -37,6 +34,8 @@ double c_payload(double n);
 local payload = require("lua_payload")
 
 ------------------------------------------------
+
+config({use_jit=true, time=10})
 
 print("- running...")
 

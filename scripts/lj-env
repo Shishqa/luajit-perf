@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # expects environment structure
-# dir/
+# .luaenv/
 # ├── share/
 # |   └── luajit-2.1.0-beta3/
 # |       └── ..lua_packages..
@@ -10,11 +10,13 @@
 
 if [ $# -lt 2 ]
 then
-    echo "usage $0 dir exe [args...]"
+    echo "usage $0 <luaenv-path> <exe> [args...]"
     exit 1
 fi
 
 export LUA_PATH="$1/share/luajit-2.1.0-beta3/?.lua;$1/src/lua/?.lua"
-export LUA_CPATH="$1/lib/?.so;$1/src/?.so"
+export LUA_CPATH="$1/lib/?.so"
+
+export LD_LIBRARY_PATH="$1/lib"
 
 exec $2 ${@:3}

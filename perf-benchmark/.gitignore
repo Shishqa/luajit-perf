@@ -1,8 +1,0 @@
-bin/
-build/
-
-include/
-share/
-lib/
-
-perf.*

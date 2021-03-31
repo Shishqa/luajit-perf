@@ -1,2 +1,11 @@
 .idea
-luajit/*
+.cache
+compile-commands.json
+
+bin/
+build/
+Debug
+
+.luaenv/*
+
+perf.*

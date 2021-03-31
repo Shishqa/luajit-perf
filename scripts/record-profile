@@ -4,7 +4,7 @@ echo "Starting profile record..."
 
 if type "lj-env" >/dev/null 2>/dev/null; 
 then
-  perf record -F 99 -g lj-env . $@
+  perf record -F 99 -g lj-env .luaenv $@
 else
   echo "lj-env not found in PATH. Exiting..."
 fi
