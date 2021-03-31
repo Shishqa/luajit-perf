@@ -1,12 +1,11 @@
 add_library(profile)
 target_sources(profile
-  PUBLIC
-    profile.h
   PRIVATE
+    profile.h
     buffer.h
+    write.h
     profile.c
     buffer.c
-    write.h
     write.c
   )
 target_include_directories(profile
