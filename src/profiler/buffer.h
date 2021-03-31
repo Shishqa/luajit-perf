@@ -7,8 +7,6 @@
 #include <string.h>
 #include <unistd.h>
 
-enum CONSTANTS { DEFAULT_BUF_SIZE = 4096 };
-
 struct buffer {
   char* data;
   char* pos;

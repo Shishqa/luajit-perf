@@ -1,3 +1,5 @@
+#include <execinfo.h>
+
 #include "luajit-2.1/luajit.h"
 #include "profile.h"
 

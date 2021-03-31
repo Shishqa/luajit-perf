@@ -12,7 +12,7 @@ void print_counters() {
       "\tcfunc: %lu\n"
       "\tinterp: %lu\n"
       "\ttrace: %lu\n",
-      test.lfunc, test.cfunc, test.ffunc, test.interp, test.trace);
+      test.lfunc, test.ffunc, test.cfunc, test.interp, test.trace);
 }
 
 void write_trace(struct profiler_state* ps) { test.trace++; }
@@ -22,9 +22,15 @@ void write_lfunc(struct profiler_state* ps) {
   dump_callchain_lfunc(ps);
 }
 
-void write_ffunc(struct profiler_state* ps) { test.ffunc++; }
+void write_ffunc(struct profiler_state* ps) {
+  test.ffunc++;
+  //dump_callchain_ffunc(ps);
+}
 
-void write_cfunc(struct profiler_state* ps) { test.cfunc++; }
+void write_cfunc(struct profiler_state* ps) {
+  test.cfunc++;
+  //dump_callchain_cfunc(ps);
+}
 
 void write_vmstate(struct profiler_state* ps) { test.interp++; }
 
