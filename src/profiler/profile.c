@@ -44,17 +44,6 @@ void write_stack(struct profiler_state* ps) {
 void profile_callback(void* data, lua_State* L, int samples, int vmstate) {
   struct profiler_state* ps = (struct profiler_state*)(data);
 
-  /*
-  size_t dumpstr_len = 0;
-  FILE* stacktrace = (FILE*) data;
-
-  const char* stack_dump =
-      luaJIT_profile_dumpstack(L, "F;", STACKTRACE_DEPTH, &dumpstr_len);
-
-  fprintf(stacktrace, "%s\n", stack_dump);
-  fflush(stacktrace);
-  */
-
   switch (vmstate) {
     case 'N':
       ps->vmstate = N;
@@ -101,6 +90,7 @@ void profile_stop(lua_State* L) {
   }
   print_counters();
 
+  flush_buf(&ps->buf);
   release_buf(&ps->buf);
 }
 

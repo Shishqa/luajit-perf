@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "profile.h"
+#include "callchain.h"
 
 struct test {
   uint64_t lfunc;

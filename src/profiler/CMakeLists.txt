@@ -4,9 +4,11 @@ target_sources(profile
     profile.h
     buffer.h
     write.h
+    callchain.h
     profile.c
     buffer.c
     write.c
+    callchain.c
   )
 target_include_directories(profile
   PUBLIC

@@ -1,10 +1,10 @@
 #include "buffer.h"
 
 void init_buf(struct buffer* buf, int fd, size_t size) {
+  buf->data = (char*)calloc(size, sizeof(uint8_t));
+  buf->pos = buf->data;
   buf->fd = fd;
-  buf->pos = 0;
   buf->size = size;
-  buf->data = (uint8_t*)calloc(size, sizeof(uint8_t));
 }
 
 void release_buf(struct buffer* buf) { free(buf->data); }
@@ -16,7 +16,7 @@ ssize_t flush_buf(struct buffer* buf) {
   return bytes;
 }
 
-ssize_t write_buf(struct buffer* buf, const uint8_t* payload, size_t len) {
+ssize_t write_buf(struct buffer* buf, const char* payload, size_t len) {
   size_t total_bytes = 0;
 
   while (len != 0) {
