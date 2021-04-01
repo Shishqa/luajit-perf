@@ -14,16 +14,14 @@ void dump_callchain_cfunc(struct profiler_state* ps) {
 
   char** names = backtrace_symbols(ps->backtrace_buf, depth);
 
-  for (size_t i = 0; i < depth; ++i) {
+  for (ssize_t i = depth - 1; i >= 0; --i) {
     write_buf(&ps->buf, names[i],
               strlen(names[i]));  // FIXME definetely will cause massive
                                   // profiling overhead
     write_buf(&ps->buf, ";", 1);
   }
   write_buf(&ps->buf, "\n", 1);
-}
 
-void dump_callchain_ffunc(struct profiler_state* ps) {
-  // dump_callchain_cfunc(ps);
+  free(names);
 }
 

@@ -77,7 +77,7 @@ void profile_callback(void* data, lua_State* L, int samples, int vmstate) {
 void profile_start(lua_State* L, int fd) {
   struct profiler_state* ps = &profiler_state;
   init_profiler_state(ps, fd);
-  luaJIT_profile_start(L, "f", profile_callback, ps);
+  luaJIT_profile_start(L, "fi1", profile_callback, ps);
 }
 
 void profile_stop(lua_State* L) {
