@@ -7,7 +7,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 project(benchmark)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
-set(CMAKE_CXX_FLAGS -fno-omit-frame-pointer -g)
+set(CMAKE_C_FLAGS -fno-omit-frame-pointer)
 
 #----------------------------------------------------------------------------#
 
