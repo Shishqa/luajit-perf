@@ -1,3 +1,0 @@
-#!/bin/sh
-
-lj-env . ./bin/luajit ./src/lua/run_payloads.lua
