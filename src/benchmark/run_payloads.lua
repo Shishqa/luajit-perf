@@ -35,7 +35,7 @@ local payload = require("lua_payload")
 
 ------------------------------------------------
 
-config({use_jit=false, time=20})
+config({use_jit=false, time=100})
 
 print("- running...")
 

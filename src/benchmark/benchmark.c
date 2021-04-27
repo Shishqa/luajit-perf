@@ -8,12 +8,20 @@
 
 #include "benchmark/benchmark.h"
 
+static lua_State* LUA_THREAD = NULL;
+
+lua_State* thread() {
+  return LUA_THREAD;
+}
+
 void run_benchmark(benchmark_callback prologue, benchmark_callback epilogue) {
   
   static const char* benchmark_script = "./src/benchmark/run_payloads.lua";
 
   lua_State* L = luaL_newstate();
   assert(NULL != L);
+  LUA_THREAD = L;
+
   luaL_openlibs(L);
 
   int error = luaL_loadfile(L, benchmark_script);

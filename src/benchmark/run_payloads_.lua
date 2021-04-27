@@ -42,7 +42,7 @@ print("- running...")
 local start_time = os.clock()
 
 local i = 0
-while i < 1000000 do
+while i < 10000000000 do
     if i % 2 == 0 then
         c_payload.c_payload(10)
     else

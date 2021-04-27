@@ -8,4 +8,6 @@ typedef void (*benchmark_callback)(lua_State* L);
 void run_benchmark(benchmark_callback prologue, 
                    benchmark_callback epilogue);
 
+lua_State* thread();
+
 #endif /* ifndef LJ_BENCHMARK */
