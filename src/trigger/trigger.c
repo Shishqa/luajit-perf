@@ -59,6 +59,6 @@ int main() {
 
   SELF = pthread_self(); 
 
-  run_benchmark(NULL, NULL);
+  run_benchmark(NULL, lj_sysprof_stop);
   return 0;
 }
