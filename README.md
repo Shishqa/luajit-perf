@@ -4,7 +4,10 @@
 
 ```bash
 # 0. clone repository
-git clone --recurse-submodules https://github.com/Shishqa/luajit-perf.git
+git clone https://github.com/Shishqa/luajit-perf.git
+cd luajit-perf
+git checkout shishqa/test-suite
+git submodule update --init --recursive
 
 # 1. setup 
 ./setup.sh
