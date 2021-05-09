@@ -1,0 +1,6 @@
+[submodule "benchmarks/bench-collection"]
+	path = benchmarks/bench-collection
+	url = https://github.com/LuaJIT/LuaJIT-test-cleanup.git
+[submodule "luajit"]
+	path = luajit
+	url = https://github.com/Shishqa/luajit.git

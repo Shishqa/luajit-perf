@@ -8,5 +8,4 @@ Debug
 
 .luaenv/*
 
-perf.*
-luajit/*
+*.bin

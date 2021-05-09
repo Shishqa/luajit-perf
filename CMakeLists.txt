@@ -11,6 +11,12 @@ set(CMAKE_C_FLAGS -fno-omit-frame-pointer)
 
 #----------------------------------------------------------------------------#
 
+set(LUAENV ${PROJECT_SOURCE_DIR}/.luaenv)
+message("using lua env: ${LUAENV}")
+
+#----------------------------------------------------------------------------#
+
 add_subdirectory(src)
+add_subdirectory(benchmarks)
 
 #----------------------------------------------------------------------------#

@@ -6,32 +6,31 @@
 #include "luajit-2.1/lua.h"
 #include "luajit-2.1/luajit.h"
 
-#include "benchmark/benchmark.h"
+#include "embed.h"
 
-static lua_State* LUA_THREAD = NULL;
+static lua_State *RUNNING_STATE = NULL;
 
-lua_State* thread() {
-  return LUA_THREAD;
-}
+lua_State *running_lua_state() { return RUNNING_STATE; }
 
-void run_benchmark(benchmark_callback prologue, benchmark_callback epilogue) {
-  
-  static const char* benchmark_script = "./src/benchmark/run_payloads.lua";
+void run_embedded(const char *script_path, int jit, callback prologue,
+                  callback epilogue) {
 
-  lua_State* L = luaL_newstate();
+  lua_State *L = luaL_newstate();
   assert(NULL != L);
-  LUA_THREAD = L;
+  RUNNING_STATE = L;
 
   luaL_openlibs(L);
+  luaJIT_setmode(L, 0,
+                 LUAJIT_MODE_ENGINE | (jit ? LUAJIT_MODE_ON : LUAJIT_MODE_OFF));
 
-  int error = luaL_loadfile(L, benchmark_script);
+  int error = luaL_loadfile(L, script_path);
   if (error) {
     fprintf(stderr, "%s", lua_tostring(L, -1));
     lua_pop(L, 1); /* pop error message from the stack */
     lua_close(L);
     return;
   }
- 
+
   if (prologue) {
     prologue(L);
   }

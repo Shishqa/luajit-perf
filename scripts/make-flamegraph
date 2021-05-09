@@ -1,9 +1,0 @@
-#!/bin/bash
-
-[ -d ./flamegraphs ] || mkdir ./flamegraphs
-
-perf report --stdio --no-children -n -g folded,0,caller,count -s comm | \
-    awk '/^ / { comm = $3 } /^[0-9]/ { print comm ";" $2, $1 }' | \
-    flamegraph.pl --title "$1" > "./flamegraphs/$1.svg"
-
-$BROWSER "./flamegraphs/$1.svg"
