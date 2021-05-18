@@ -1,7 +1,7 @@
 #include <fcntl.h>
 
 #include "embed.h"
-#include "../.luaenv/include/luajit-2.1/lj_sysprof.h"
+#include "../.luaenv/include/luajit-2.1/lmisclib.h"
 
 #include <getopt.h>
 #include <pthread.h>
@@ -14,24 +14,27 @@
 static sig_atomic_t profile_running = 0;
 static pthread_t SELF;
 
-static struct lj_sysprof_options SYSPROF_OPT = {};
+static struct luam_sysprof_options SYSPROF_OPT = {};
 
 const char *mode_leaf = "leaf";
 const char *mode_callgraph = "callgraph";
 
-static void report(const char *action, enum lj_sysprof_err err) {
+static void report(const char *action, int err) {
   printf("%s profiler: %s\n", action, err == SYSPROF_SUCCESS ? "OK" : "FAIL");
+  if (err != SYSPROF_SUCCESS) {
+    fprintf(stderr, " > %d <", err);
+  }
 }
 
 void start_profile(lua_State *L) {
   lua_assert(SELF == pthread_self());
-  int err = lj_sysprof_start(L, &SYSPROF_OPT);
+  int err = luaM_sysprof_start(L, &SYSPROF_OPT);
   report("starting", err);
 }
 
 void stop_profile(lua_State *L) {
   lua_assert(SELF == pthread_self());
-  int err = lj_sysprof_stop(L);
+  int err = luaM_sysprof_stop(L);
   report("stopping", err);
 }
 
@@ -45,12 +48,12 @@ void profile_switch(int signal) {
 }
 
 void epilogue(lua_State *L) {
-  int err = lj_sysprof_stop(L);
+  int err = luaM_sysprof_stop(L);
   report("stopping", err);
 }
 
 void prologue(lua_State *L) {
-  int err = lj_sysprof_start(L, &SYSPROF_OPT);
+  int err = luaM_sysprof_start(L, &SYSPROF_OPT);
   report("starting", err);
   profile_running = err == SYSPROF_SUCCESS ? 1 : 0;
 }
@@ -58,8 +61,8 @@ void prologue(lua_State *L) {
 int main(int argc, char *argv[]) {
   SYSPROF_OPT.interval = 99;
   SYSPROF_OPT.mode = PROFILE_CALLGRAPH;
+  SYSPROF_OPT.path = "sysprof.bin";
 
-  char const *out_file = "sysprof.bin";
   int use_jit = 1;
   int start_without_warmup = 0;
 
@@ -80,7 +83,7 @@ int main(int argc, char *argv[]) {
       SYSPROF_OPT.interval = strtol(optarg, NULL, 10);
       break;
     case 'o':
-      out_file = optarg;
+      SYSPROF_OPT.path = optarg;
       break;
     case 's':
       start_without_warmup = 1;
@@ -105,8 +108,6 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
-  SYSPROF_OPT.path = out_file;
-
   struct sigaction sigact = {};
   sigact.sa_handler = profile_switch;
   sigact.sa_flags = SA_RESTART;
@@ -120,7 +121,9 @@ int main(int argc, char *argv[]) {
          "  out: %s\n"
          "  interval: %d\n"
          "  mode: %s\n\n",
-         script_path, use_jit ? "ON" : "OFF", out_file, SYSPROF_OPT.interval,
+         script_path, use_jit ? "ON" : "OFF", 
+         SYSPROF_OPT.path, 
+         SYSPROF_OPT.interval,
          SYSPROF_OPT.mode == PROFILE_LEAF      ? "LEAF"
          : SYSPROF_OPT.mode == PROFILE_DEFAULT ? "DEFAULT"
                                                : "CALLGRAPH");
