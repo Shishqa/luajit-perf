@@ -1,0 +1,1054 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="566" onload="init(evt)" viewBox="0 0 1200 566" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs >
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	.func_g:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	var details, searchbtn, matchedtxt, svg;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+	}
+
+	// mouse-over for info
+	function s(node) {		// show
+		info = g_to_text(node);
+		details.nodeValue = "Function: " + info;
+	}
+	function c() {			// clear
+		details.nodeValue = ' ';
+	}
+
+	// ctrl-F for search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+	})
+
+	// functions
+	function find_child(parent, name, attr) {
+		var children = parent.childNodes;
+		for (var i=0; i<children.length;i++) {
+			if (children[i].tagName == name)
+				return (attr != undefined) ? children[i].attributes[attr].value : children[i];
+		}
+		return;
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_"+attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_"+attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_"+attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes["width"].value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes["x"].value = parseFloat(r.attributes["x"].value) +3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2*12*0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+
+		for (var x=txt.length-2; x>0; x--) {
+			if (t.getSubStringLength(0, x+2) <= w) {
+				t.textContent = txt.substring(0,x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for(var i=0, c=e.childNodes; i<c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes["x"] != undefined) {
+				orig_save(e, "x");
+				e.attributes["x"].value = (parseFloat(e.attributes["x"].value) - x - 10) * ratio + 10;
+				if(e.tagName == "text") e.attributes["x"].value = find_child(e.parentNode, "rect", "x") + 3;
+			}
+			if (e.attributes["width"] != undefined) {
+				orig_save(e, "width");
+				e.attributes["width"].value = parseFloat(e.attributes["width"].value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for(var i=0, c=e.childNodes; i<c.length; i++) {
+			zoom_child(c[i], x-10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes["x"] != undefined) {
+				orig_save(e, "x");
+				e.attributes["x"].value = 10;
+			}
+			if (e.attributes["width"] != undefined) {
+				orig_save(e, "width");
+				e.attributes["width"].value = parseInt(svg.width.baseVal.value) - (10*2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for(var i=0, c=e.childNodes; i<c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr["width"].value);
+		var xmin = parseFloat(attr["x"].value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr["y"].value);
+		var ratio = (svg.width.baseVal.value - 2*10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		var unzoombtn = document.getElementById("unzoom");
+		unzoombtn.style["opacity"] = "1.0";
+
+		var el = document.getElementsByTagName("g");
+		for(var i=0;i<el.length;i++){
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a["x"].value);
+			var ew = parseFloat(a["width"].value);
+			// Is it an ancestor
+			if (0 == 0) {
+				var upstack = parseFloat(a["y"].value) > ymin;
+			} else {
+				var upstack = parseFloat(a["y"].value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.style["opacity"] = "0.5";
+					zoom_parent(e);
+					e.onclick = function(e){unzoom(); zoom(this);};
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.style["display"] = "none";
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.style["display"] = "none";
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					e.onclick = function(e){zoom(this);};
+					update_text(e);
+				}
+			}
+		}
+	}
+	function unzoom() {
+		var unzoombtn = document.getElementById("unzoom");
+		unzoombtn.style["opacity"] = "0.0";
+
+		var el = document.getElementsByTagName("g");
+		for(i=0;i<el.length;i++) {
+			el[i].style["display"] = "block";
+			el[i].style["opacity"] = "1";
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+	}
+
+	// search
+	function reset_search() {
+		var el = document.getElementsByTagName("rect");
+		for (var i=0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)", "");
+			if (term != null) {
+				search(term)
+			}
+		} else {
+			reset_search();
+			searching = 0;
+			searchbtn.style["opacity"] = "0.1";
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.style["opacity"] = "0.0";
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		var re = new RegExp(term);
+		var el = document.getElementsByTagName("g");
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			if (e.attributes["class"].value != "func_g")
+				continue;
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (rect == null) {
+				// the rect might be wrapped in an anchor
+				// if nameattr href is being used
+				if (rect = find_child(e, "a")) {
+				    rect = find_child(r, "rect");
+				}
+			}
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes["width"].value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes["x"].value);
+				orig_save(rect, "fill");
+				rect.attributes["fill"].value =
+				    "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+
+		searchbtn.style["opacity"] = "1.0";
+		searchbtn.firstChild.nodeValue = "Reset Search"
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.style["opacity"] = "1.0";
+		pct = 100 * count / maxwidth;
+		if (pct == 100)
+			pct = "100"
+		else
+			pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+	function searchover(e) {
+		searchbtn.style["opacity"] = "1.0";
+	}
+	function searchout(e) {
+		if (searching) {
+			searchbtn.style["opacity"] = "1.0";
+		} else {
+			searchbtn.style["opacity"] = "0.1";
+		}
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1200.0" height="566.0" fill="url(#background)"  />
+<text text-anchor="middle" x="600.00" y="24" font-size="17" font-family="Verdana" fill="rgb(0,0,0)"  >call, jit off</text>
+<text text-anchor="" x="10.00" y="549" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="details" > </text>
+<text text-anchor="" x="10.00" y="24" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="unzoom" onclick="unzoom()" style="opacity:0.0;cursor:pointer" >Reset Zoom</text>
+<text text-anchor="" x="1090.00" y="24" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="search" onmouseover="searchover()" onmouseout="searchout()" onclick="search_prompt()" style="opacity:0.1;cursor:pointer" >Search</text>
+<text text-anchor="" x="1090.00" y="549" font-size="12" font-family="Verdana" fill="rgb(0,0,0)" id="matched" > </text>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_ccall_func (370 samples, 15.89%)</title><rect x="10.5" y="341" width="187.5" height="15.0" fill="rgb(213,8,4)" rx="2" ry="2" />
+<text text-anchor="" x="13.51" y="351.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj_ccall_func</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (27 samples, 1.16%)</title><rect x="634.2" y="165" width="13.7" height="15.0" fill="rgb(208,37,37)" rx="2" ry="2" />
+<text text-anchor="" x="637.20" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,457 samples, 62.56%)</title><rect x="440.2" y="277" width="738.1" height="15.0" fill="rgb(254,142,25)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="287.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (325 samples, 13.95%)</title><rect x="33.3" y="133" width="164.7" height="15.0" fill="rgb(229,25,51)" rx="2" ry="2" />
+<text text-anchor="" x="36.31" y="143.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__libc_start_main (472 samples, 20.27%)</title><rect x="201.0" y="469" width="239.2" height="15.0" fill="rgb(240,160,45)" rx="2" ry="2" />
+<text text-anchor="" x="204.01" y="479.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >__libc_start_main</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (356 samples, 15.29%)</title><rect x="17.6" y="165" width="180.4" height="15.0" fill="rgb(234,40,28)" rx="2" ry="2" />
+<text text-anchor="" x="20.60" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (12 samples, 0.52%)</title><rect x="1142.9" y="245" width="6.1" height="15.0" fill="rgb(236,62,38)" rx="2" ry="2" />
+<text text-anchor="" x="1145.88" y="255.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_CALL (2 samples, 0.09%)</title><rect x="531.3" y="149" width="1.1" height="15.0" fill="rgb(215,142,8)" rx="2" ry="2" />
+<text text-anchor="" x="534.35" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,477 samples, 63.42%)</title><rect x="440.2" y="325" width="748.3" height="15.0" fill="rgb(208,71,1)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="335.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>ffi.meta.__call (370 samples, 15.89%)</title><rect x="10.5" y="389" width="187.5" height="15.0" fill="rgb(246,5,32)" rx="2" ry="2" />
+<text text-anchor="" x="13.51" y="399.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >ffi.meta.__call</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (1 samples, 0.04%)</title><rect x="1187.0" y="309" width="0.5" height="15.0" fill="rgb(209,206,53)" rx="2" ry="2" />
+<text text-anchor="" x="1189.96" y="319.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (2 samples, 0.09%)</title><rect x="1170.7" y="261" width="1.1" height="15.0" fill="rgb(224,18,54)" rx="2" ry="2" />
+<text text-anchor="" x="1173.75" y="271.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_SUBVN (11 samples, 0.47%)</title><rect x="597.7" y="149" width="5.6" height="15.0" fill="rgb(236,85,19)" rx="2" ry="2" />
+<text text-anchor="" x="600.72" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (1 samples, 0.04%)</title><rect x="1189.0" y="325" width="0.5" height="15.0" fill="rgb(230,36,18)" rx="2" ry="2" />
+<text text-anchor="" x="1191.99" y="335.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__libc_start_main (1,480 samples, 63.55%)</title><rect x="440.2" y="469" width="749.8" height="15.0" fill="rgb(235,152,7)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="479.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >__libc_start_main</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (21 samples, 0.90%)</title><rect x="187.3" y="53" width="10.7" height="15.0" fill="rgb(249,32,42)" rx="2" ry="2" />
+<text text-anchor="" x="190.33" y="63.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>main (1,480 samples, 63.55%)</title><rect x="440.2" y="453" width="749.8" height="15.0" fill="rgb(212,164,5)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="463.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >main</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (137 samples, 5.88%)</title><rect x="128.6" y="85" width="69.4" height="15.0" fill="rgb(222,184,53)" rx="2" ry="2" />
+<text text-anchor="" x="131.56" y="95.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (2 samples, 0.09%)</title><rect x="470.0" y="133" width="1.1" height="15.0" fill="rgb(236,26,16)" rx="2" ry="2" />
+<text text-anchor="" x="473.04" y="143.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (14 samples, 0.60%)</title><rect x="846.0" y="181" width="7.1" height="15.0" fill="rgb(240,95,48)" rx="2" ry="2" />
+<text text-anchor="" x="848.98" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (63 samples, 2.71%)</title><rect x="1071.4" y="213" width="32.0" height="15.0" fill="rgb(246,105,44)" rx="2" ry="2" />
+<text text-anchor="" x="1074.44" y="223.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>main (472 samples, 20.27%)</title><rect x="201.0" y="453" width="239.2" height="15.0" fill="rgb(250,175,30)" rx="2" ry="2" />
+<text text-anchor="" x="204.01" y="463.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >main</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (11 samples, 0.47%)</title><rect x="536.4" y="149" width="5.6" height="15.0" fill="rgb(209,17,53)" rx="2" ry="2" />
+<text text-anchor="" x="539.41" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,471 samples, 63.16%)</title><rect x="440.2" y="309" width="745.2" height="15.0" fill="rgb(221,171,9)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="319.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (1 samples, 0.04%)</title><rect x="1188.0" y="309" width="0.5" height="15.0" fill="rgb(237,60,26)" rx="2" ry="2" />
+<text text-anchor="" x="1190.97" y="319.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lua_pcall (377 samples, 16.19%)</title><rect x="10.0" y="421" width="191.0" height="15.0" fill="rgb(240,25,27)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="431.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lua_pcall</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (1 samples, 0.04%)</title><rect x="1155.5" y="245" width="0.6" height="15.0" fill="rgb(239,17,34)" rx="2" ry="2" />
+<text text-anchor="" x="1158.55" y="255.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,480 samples, 63.55%)</title><rect x="440.2" y="341" width="749.8" height="15.0" fill="rgb(235,47,15)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="351.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (73 samples, 3.13%)</title><rect x="161.0" y="69" width="37.0" height="15.0" fill="rgb(222,138,36)" rx="2" ry="2" />
+<text text-anchor="" x="163.98" y="79.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_p..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_SUBVN (9 samples, 0.39%)</title><rect x="1066.9" y="213" width="4.5" height="15.0" fill="rgb(250,103,30)" rx="2" ry="2" />
+<text text-anchor="" x="1069.88" y="223.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (2 samples, 0.09%)</title><rect x="469.0" y="133" width="1.0" height="15.0" fill="rgb(217,207,32)" rx="2" ry="2" />
+<text text-anchor="" x="472.03" y="143.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (17 samples, 0.73%)</title><rect x="709.2" y="165" width="8.6" height="15.0" fill="rgb(207,167,53)" rx="2" ry="2" />
+<text text-anchor="" x="712.18" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (10 samples, 0.43%)</title><rect x="970.6" y="197" width="5.1" height="15.0" fill="rgb(212,166,1)" rx="2" ry="2" />
+<text text-anchor="" x="973.62" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (364 samples, 15.63%)</title><rect x="13.5" y="261" width="184.5" height="15.0" fill="rgb(206,86,54)" rx="2" ry="2" />
+<text text-anchor="" x="16.55" y="271.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (1 samples, 0.04%)</title><rect x="1187.5" y="309" width="0.5" height="15.0" fill="rgb(237,57,29)" rx="2" ry="2" />
+<text text-anchor="" x="1190.47" y="319.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (673 samples, 28.90%)</title><rect x="440.2" y="181" width="340.9" height="15.0" fill="rgb(212,112,36)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-pe..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (10 samples, 0.43%)</title><rect x="950.4" y="197" width="5.0" height="15.0" fill="rgb(217,219,3)" rx="2" ry="2" />
+<text text-anchor="" x="953.35" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@benchmarks/mixed-recursion.lua:33 (377 samples, 16.19%)</title><rect x="10.0" y="405" width="191.0" height="15.0" fill="rgb(225,21,36)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="415.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@benchmarks/mixed-recurs..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (2 samples, 0.09%)</title><rect x="440.7" y="85" width="1.0" height="15.0" fill="rgb(215,184,41)" rx="2" ry="2" />
+<text text-anchor="" x="443.66" y="95.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (2 samples, 0.09%)</title><rect x="468.0" y="133" width="1.0" height="15.0" fill="rgb(237,63,41)" rx="2" ry="2" />
+<text text-anchor="" x="471.02" y="143.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (27 samples, 1.16%)</title><rect x="781.1" y="181" width="13.7" height="15.0" fill="rgb(245,195,24)" rx="2" ry="2" />
+<text text-anchor="" x="784.13" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (349 samples, 14.98%)</title><rect x="21.1" y="149" width="176.9" height="15.0" fill="rgb(217,12,35)" rx="2" ry="2" />
+<text text-anchor="" x="24.15" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>VMST_LFUNC (1,480 samples, 63.55%)</title><rect x="440.2" y="501" width="749.8" height="15.0" fill="rgb(214,7,44)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="511.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >VMST_LFUNC</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_clib_index (1 samples, 0.04%)</title><rect x="10.0" y="325" width="0.5" height="15.0" fill="rgb(239,153,6)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="335.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_cf_ffi_meta___call (370 samples, 15.89%)</title><rect x="10.5" y="357" width="187.5" height="15.0" fill="rgb(227,103,7)" rx="2" ry="2" />
+<text text-anchor="" x="13.51" y="367.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj_cf_ffi_meta___call</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_SUBVN (32 samples, 1.37%)</title><rect x="853.1" y="181" width="16.2" height="15.0" fill="rgb(230,190,38)" rx="2" ry="2" />
+<text text-anchor="" x="856.07" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (215 samples, 9.23%)</title><rect x="89.0" y="101" width="109.0" height="15.0" fill="rgb(245,14,38)" rx="2" ry="2" />
+<text text-anchor="" x="92.04" y="111.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (133 samples, 5.71%)</title><rect x="869.3" y="181" width="67.4" height="15.0" fill="rgb(232,43,52)" rx="2" ry="2" />
+<text text-anchor="" x="872.29" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj_BC_T..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (165 samples, 7.08%)</title><rect x="356.6" y="405" width="83.6" height="15.0" fill="rgb(245,54,45)" rx="2" ry="2" />
+<text text-anchor="" x="359.55" y="415.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj_BC_RET1</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (366 samples, 15.71%)</title><rect x="12.5" y="309" width="185.5" height="15.0" fill="rgb(218,87,19)" rx="2" ry="2" />
+<text text-anchor="" x="15.53" y="319.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__clock_gettime_2 (5 samples, 0.21%)</title><rect x="198.5" y="325" width="2.5" height="15.0" fill="rgb(254,153,39)" rx="2" ry="2" />
+<text text-anchor="" x="201.48" y="335.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (37 samples, 1.59%)</title><rect x="573.4" y="149" width="18.7" height="15.0" fill="rgb(246,3,31)" rx="2" ry="2" />
+<text text-anchor="" x="576.40" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (2 samples, 0.09%)</title><rect x="446.2" y="101" width="1.0" height="15.0" fill="rgb(211,92,22)" rx="2" ry="2" />
+<text text-anchor="" x="449.23" y="111.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (10 samples, 0.43%)</title><rect x="1179.4" y="277" width="5.0" height="15.0" fill="rgb(251,118,42)" rx="2" ry="2" />
+<text text-anchor="" x="1182.36" y="287.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (40 samples, 1.72%)</title><rect x="471.1" y="133" width="20.2" height="15.0" fill="rgb(211,132,35)" rx="2" ry="2" />
+<text text-anchor="" x="474.06" y="143.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (1 samples, 0.04%)</title><rect x="1150.5" y="245" width="0.5" height="15.0" fill="rgb(231,115,23)" rx="2" ry="2" />
+<text text-anchor="" x="1153.48" y="255.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (2 samples, 0.09%)</title><rect x="1184.4" y="293" width="1.0" height="15.0" fill="rgb(214,118,10)" rx="2" ry="2" />
+<text text-anchor="" x="1187.43" y="303.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (11 samples, 0.47%)</title><rect x="1172.8" y="261" width="5.5" height="15.0" fill="rgb(219,87,54)" rx="2" ry="2" />
+<text text-anchor="" x="1175.77" y="271.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (1 samples, 0.04%)</title><rect x="440.2" y="85" width="0.5" height="15.0" fill="rgb(246,47,20)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="95.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (105 samples, 4.51%)</title><rect x="727.9" y="165" width="53.2" height="15.0" fill="rgb(243,168,4)" rx="2" ry="2" />
+<text text-anchor="" x="730.93" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj_BC..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (364 samples, 15.63%)</title><rect x="13.5" y="229" width="184.5" height="15.0" fill="rgb(219,206,24)" rx="2" ry="2" />
+<text text-anchor="" x="16.55" y="239.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (22 samples, 0.94%)</title><rect x="834.8" y="181" width="11.2" height="15.0" fill="rgb(240,91,3)" rx="2" ry="2" />
+<text text-anchor="" x="837.83" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (4 samples, 0.17%)</title><rect x="466.0" y="117" width="2.0" height="15.0" fill="rgb(216,31,6)" rx="2" ry="2" />
+<text text-anchor="" x="468.99" y="127.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (3 samples, 0.13%)</title><rect x="440.2" y="101" width="1.5" height="15.0" fill="rgb(253,216,34)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="111.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_FUNCC (1 samples, 0.04%)</title><rect x="10.0" y="373" width="0.5" height="15.0" fill="rgb(216,68,46)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="383.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (362 samples, 15.54%)</title><rect x="14.6" y="213" width="183.4" height="15.0" fill="rgb(216,217,12)" rx="2" ry="2" />
+<text text-anchor="" x="17.56" y="223.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,480 samples, 63.55%)</title><rect x="440.2" y="373" width="749.8" height="15.0" fill="rgb(254,0,50)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="383.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (9 samples, 0.39%)</title><rect x="1058.8" y="213" width="4.5" height="15.0" fill="rgb(209,33,53)" rx="2" ry="2" />
+<text text-anchor="" x="1061.78" y="223.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (61 samples, 2.62%)</title><rect x="603.3" y="149" width="30.9" height="15.0" fill="rgb(214,216,48)" rx="2" ry="2" />
+<text text-anchor="" x="606.29" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,434 samples, 61.57%)</title><rect x="440.2" y="261" width="726.5" height="15.0" fill="rgb(215,79,12)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="271.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (7 samples, 0.30%)</title><rect x="1063.3" y="213" width="3.6" height="15.0" fill="rgb(233,177,24)" rx="2" ry="2" />
+<text text-anchor="" x="1066.34" y="223.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>ccall_get_results (1 samples, 0.04%)</title><rect x="10.5" y="325" width="0.5" height="15.0" fill="rgb(238,174,8)" rx="2" ry="2" />
+<text text-anchor="" x="13.51" y="335.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>run_embedded (1,480 samples, 63.55%)</title><rect x="440.2" y="437" width="749.8" height="15.0" fill="rgb(240,80,10)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="447.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >run_embedded</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (364 samples, 15.63%)</title><rect x="13.5" y="245" width="184.5" height="15.0" fill="rgb(205,122,29)" rx="2" ry="2" />
+<text text-anchor="" x="16.55" y="255.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (25 samples, 1.07%)</title><rect x="509.1" y="133" width="12.6" height="15.0" fill="rgb(227,78,25)" rx="2" ry="2" />
+<text text-anchor="" x="512.06" y="143.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_SUBVN (20 samples, 0.86%)</title><rect x="981.3" y="197" width="10.1" height="15.0" fill="rgb(221,176,30)" rx="2" ry="2" />
+<text text-anchor="" x="984.26" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (8 samples, 0.34%)</title><rect x="532.4" y="149" width="4.0" height="15.0" fill="rgb(232,36,49)" rx="2" ry="2" />
+<text text-anchor="" x="535.36" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@benchmarks/mixed-recursion.lua:33 (1,480 samples, 63.55%)</title><rect x="440.2" y="405" width="749.8" height="15.0" fill="rgb(231,15,31)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="415.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@benchmarks/mixed-recursion.lua:33</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_SUBVN (3 samples, 0.13%)</title><rect x="1156.1" y="245" width="1.5" height="15.0" fill="rgb(223,151,41)" rx="2" ry="2" />
+<text text-anchor="" x="1159.05" y="255.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__memset_avx2_unaligned_erms (2 samples, 0.09%)</title><rect x="11.5" y="309" width="1.0" height="15.0" fill="rgb(237,46,35)" rx="2" ry="2" />
+<text text-anchor="" x="14.52" y="319.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>ccall_set_args (3 samples, 0.13%)</title><rect x="11.0" y="325" width="1.5" height="15.0" fill="rgb(237,148,21)" rx="2" ry="2" />
+<text text-anchor="" x="14.01" y="335.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_FUNCC (6 samples, 0.26%)</title><rect x="198.0" y="373" width="3.0" height="15.0" fill="rgb(222,74,27)" rx="2" ry="2" />
+<text text-anchor="" x="200.97" y="383.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_FUNCC (370 samples, 15.89%)</title><rect x="10.5" y="373" width="187.5" height="15.0" fill="rgb(252,200,26)" rx="2" ry="2" />
+<text text-anchor="" x="13.51" y="383.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj_BC_FUNCC</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (11 samples, 0.47%)</title><rect x="592.1" y="149" width="5.6" height="15.0" fill="rgb(205,174,23)" rx="2" ry="2" />
+<text text-anchor="" x="595.15" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (19 samples, 0.82%)</title><rect x="1035.0" y="213" width="9.6" height="15.0" fill="rgb(244,151,35)" rx="2" ry="2" />
+<text text-anchor="" x="1037.96" y="223.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (365 samples, 15.67%)</title><rect x="13.0" y="293" width="185.0" height="15.0" fill="rgb(238,116,31)" rx="2" ry="2" />
+<text text-anchor="" x="16.04" y="303.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_CALL (1 samples, 0.04%)</title><rect x="794.8" y="181" width="0.5" height="15.0" fill="rgb(231,72,53)" rx="2" ry="2" />
+<text text-anchor="" x="797.81" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>ffi_clib_index (1 samples, 0.04%)</title><rect x="10.0" y="341" width="0.5" height="15.0" fill="rgb(245,27,43)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="351.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (2 samples, 0.09%)</title><rect x="1113.5" y="229" width="1.0" height="15.0" fill="rgb(248,120,46)" rx="2" ry="2" />
+<text text-anchor="" x="1116.50" y="239.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (1 samples, 0.04%)</title><rect x="1170.2" y="261" width="0.5" height="15.0" fill="rgb(247,139,32)" rx="2" ry="2" />
+<text text-anchor="" x="1173.24" y="271.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (6 samples, 0.26%)</title><rect x="1151.0" y="245" width="3.0" height="15.0" fill="rgb(241,123,36)" rx="2" ry="2" />
+<text text-anchor="" x="1153.99" y="255.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (62 samples, 2.66%)</title><rect x="542.0" y="149" width="31.4" height="15.0" fill="rgb(227,212,26)" rx="2" ry="2" />
+<text text-anchor="" x="544.99" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (6 samples, 0.26%)</title><rect x="442.2" y="101" width="3.0" height="15.0" fill="rgb(241,23,49)" rx="2" ry="2" />
+<text text-anchor="" x="445.18" y="111.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (161 samples, 6.91%)</title><rect x="440.2" y="149" width="81.5" height="15.0" fill="rgb(246,183,10)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/Wor..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (10 samples, 0.43%)</title><rect x="801.9" y="181" width="5.1" height="15.0" fill="rgb(208,101,28)" rx="2" ry="2" />
+<text text-anchor="" x="804.90" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_cf_os_clock (6 samples, 0.26%)</title><rect x="198.0" y="357" width="3.0" height="15.0" fill="rgb(250,145,51)" rx="2" ry="2" />
+<text text-anchor="" x="200.97" y="367.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_cf_ffi_clib___index (1 samples, 0.04%)</title><rect x="10.0" y="357" width="0.5" height="15.0" fill="rgb(219,164,42)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="367.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (13 samples, 0.56%)</title><rect x="795.3" y="181" width="6.6" height="15.0" fill="rgb(240,131,26)" rx="2" ry="2" />
+<text text-anchor="" x="798.32" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>[0x7ffe09a2fa5d] (5 samples, 0.21%)</title><rect x="198.5" y="309" width="2.5" height="15.0" fill="rgb(253,190,45)" rx="2" ry="2" />
+<text text-anchor="" x="201.48" y="319.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (11 samples, 0.47%)</title><rect x="1045.1" y="213" width="5.6" height="15.0" fill="rgb(226,25,31)" rx="2" ry="2" />
+<text text-anchor="" x="1048.10" y="223.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>all (2,329 samples, 100%)</title><rect x="10.0" y="517" width="1180.0" height="15.0" fill="rgb(228,29,51)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="527.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (281 samples, 12.07%)</title><rect x="55.6" y="117" width="142.4" height="15.0" fill="rgb(252,75,12)" rx="2" ry="2" />
+<text text-anchor="" x="58.60" y="127.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (55 samples, 2.36%)</title><rect x="807.0" y="181" width="27.8" height="15.0" fill="rgb(239,188,39)" rx="2" ry="2" />
+<text text-anchor="" x="809.97" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >l..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_SUBVN (2 samples, 0.09%)</title><rect x="1171.8" y="261" width="1.0" height="15.0" fill="rgb(254,151,41)" rx="2" ry="2" />
+<text text-anchor="" x="1174.76" y="271.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (11 samples, 0.47%)</title><rect x="975.7" y="197" width="5.6" height="15.0" fill="rgb(227,6,3)" rx="2" ry="2" />
+<text text-anchor="" x="978.68" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,387 samples, 59.55%)</title><rect x="440.2" y="245" width="702.7" height="15.0" fill="rgb(206,208,52)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="255.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (3 samples, 0.13%)</title><rect x="1154.0" y="245" width="1.5" height="15.0" fill="rgb(221,209,30)" rx="2" ry="2" />
+<text text-anchor="" x="1157.03" y="255.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (1 samples, 0.04%)</title><rect x="447.2" y="117" width="0.6" height="15.0" fill="rgb(249,34,49)" rx="2" ry="2" />
+<text text-anchor="" x="450.24" y="127.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (2 samples, 0.09%)</title><rect x="1178.3" y="277" width="1.1" height="15.0" fill="rgb(241,56,37)" rx="2" ry="2" />
+<text text-anchor="" x="1181.35" y="287.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_CALL (1 samples, 0.04%)</title><rect x="1044.6" y="213" width="0.5" height="15.0" fill="rgb(210,144,23)" rx="2" ry="2" />
+<text text-anchor="" x="1047.59" y="223.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (14 samples, 0.60%)</title><rect x="440.2" y="117" width="7.0" height="15.0" fill="rgb(206,111,5)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="127.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (980 samples, 42.08%)</title><rect x="440.2" y="197" width="496.5" height="15.0" fill="rgb(224,72,18)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luaji..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (2 samples, 0.09%)</title><rect x="1185.9" y="309" width="1.1" height="15.0" fill="rgb(253,111,18)" rx="2" ry="2" />
+<text text-anchor="" x="1188.95" y="319.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (65 samples, 2.79%)</title><rect x="661.1" y="165" width="32.9" height="15.0" fill="rgb(233,33,25)" rx="2" ry="2" />
+<text text-anchor="" x="664.05" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (1 samples, 0.04%)</title><rect x="465.0" y="117" width="0.5" height="15.0" fill="rgb(216,110,32)" rx="2" ry="2" />
+<text text-anchor="" x="467.98" y="127.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (1 samples, 0.04%)</title><rect x="1185.4" y="309" width="0.5" height="15.0" fill="rgb(220,157,38)" rx="2" ry="2" />
+<text text-anchor="" x="1188.44" y="319.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>_start (472 samples, 20.27%)</title><rect x="201.0" y="485" width="239.2" height="15.0" fill="rgb(215,200,10)" rx="2" ry="2" />
+<text text-anchor="" x="204.01" y="495.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >_start</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (35 samples, 1.50%)</title><rect x="1125.1" y="229" width="17.8" height="15.0" fill="rgb(234,66,20)" rx="2" ry="2" />
+<text text-anchor="" x="1128.15" y="239.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (360 samples, 15.46%)</title><rect x="15.6" y="181" width="182.4" height="15.0" fill="rgb(218,15,50)" rx="2" ry="2" />
+<text text-anchor="" x="18.57" y="191.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (18 samples, 0.77%)</title><rect x="1157.6" y="245" width="9.1" height="15.0" fill="rgb(205,162,14)" rx="2" ry="2" />
+<text text-anchor="" x="1160.57" y="255.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (18 samples, 0.77%)</title><rect x="1103.4" y="229" width="9.1" height="15.0" fill="rgb(230,27,4)" rx="2" ry="2" />
+<text text-anchor="" x="1106.36" y="239.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (86 samples, 3.69%)</title><rect x="991.4" y="197" width="43.6" height="15.0" fill="rgb(221,20,22)" rx="2" ry="2" />
+<text text-anchor="" x="994.39" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj_B..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (10 samples, 0.43%)</title><rect x="459.9" y="117" width="5.1" height="15.0" fill="rgb(238,176,15)" rx="2" ry="2" />
+<text text-anchor="" x="462.91" y="127.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (2 samples, 0.09%)</title><rect x="1169.2" y="261" width="1.0" height="15.0" fill="rgb(214,107,26)" rx="2" ry="2" />
+<text text-anchor="" x="1172.23" y="271.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (26 samples, 1.12%)</title><rect x="936.7" y="197" width="13.1" height="15.0" fill="rgb(214,97,11)" rx="2" ry="2" />
+<text text-anchor="" x="939.67" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>_start (377 samples, 16.19%)</title><rect x="10.0" y="485" width="191.0" height="15.0" fill="rgb(243,93,34)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="495.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >_start</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>_start (1,480 samples, 63.55%)</title><rect x="440.2" y="485" width="749.8" height="15.0" fill="rgb(244,54,48)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="495.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >_start</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (1 samples, 0.04%)</title><rect x="441.7" y="101" width="0.5" height="15.0" fill="rgb(241,110,51)" rx="2" ry="2" />
+<text text-anchor="" x="444.67" y="111.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (3 samples, 0.13%)</title><rect x="1118.1" y="229" width="1.5" height="15.0" fill="rgb(249,32,24)" rx="2" ry="2" />
+<text text-anchor="" x="1121.05" y="239.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (383 samples, 16.44%)</title><rect x="440.2" y="165" width="194.0" height="15.0" fill="rgb(232,92,20)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>os.clock (6 samples, 0.26%)</title><rect x="198.0" y="389" width="3.0" height="15.0" fill="rgb(245,57,9)" rx="2" ry="2" />
+<text text-anchor="" x="200.97" y="399.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (3 samples, 0.13%)</title><rect x="447.8" y="117" width="1.5" height="15.0" fill="rgb(224,98,22)" rx="2" ry="2" />
+<text text-anchor="" x="450.75" y="127.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>main (377 samples, 16.19%)</title><rect x="10.0" y="453" width="191.0" height="15.0" fill="rgb(238,135,38)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="463.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >main</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>VMST_CFUNC (377 samples, 16.19%)</title><rect x="10.0" y="501" width="191.0" height="15.0" fill="rgb(210,171,46)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="511.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >VMST_CFUNC</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (2 samples, 0.09%)</title><rect x="197.0" y="37" width="1.0" height="15.0" fill="rgb(225,144,31)" rx="2" ry="2" />
+<text text-anchor="" x="199.96" y="47.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_SUBVN (20 samples, 0.86%)</title><rect x="717.8" y="165" width="10.1" height="15.0" fill="rgb(251,185,2)" rx="2" ry="2" />
+<text text-anchor="" x="720.80" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_CALL (1 samples, 0.04%)</title><rect x="647.9" y="165" width="0.5" height="15.0" fill="rgb(246,223,32)" rx="2" ry="2" />
+<text text-anchor="" x="650.88" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>clock (6 samples, 0.26%)</title><rect x="198.0" y="341" width="3.0" height="15.0" fill="rgb(224,10,5)" rx="2" ry="2" />
+<text text-anchor="" x="200.97" y="351.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (1 samples, 0.04%)</title><rect x="1188.5" y="325" width="0.5" height="15.0" fill="rgb(219,84,5)" rx="2" ry="2" />
+<text text-anchor="" x="1191.48" y="335.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (18 samples, 0.77%)</title><rect x="491.3" y="133" width="9.1" height="15.0" fill="rgb(211,177,36)" rx="2" ry="2" />
+<text text-anchor="" x="494.32" y="143.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (3 samples, 0.13%)</title><rect x="1149.0" y="245" width="1.5" height="15.0" fill="rgb(253,114,51)" rx="2" ry="2" />
+<text text-anchor="" x="1151.96" y="255.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>VMST_INTERP (472 samples, 20.27%)</title><rect x="201.0" y="501" width="239.2" height="15.0" fill="rgb(254,74,26)" rx="2" ry="2" />
+<text text-anchor="" x="204.01" y="511.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >VMST_INTERP</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (24 samples, 1.03%)</title><rect x="958.5" y="197" width="12.1" height="15.0" fill="rgb(236,134,19)" rx="2" ry="2" />
+<text text-anchor="" x="961.46" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (16 samples, 0.69%)</title><rect x="1050.7" y="213" width="8.1" height="15.0" fill="rgb(212,209,35)" rx="2" ry="2" />
+<text text-anchor="" x="1053.67" y="223.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (14 samples, 0.60%)</title><rect x="654.0" y="165" width="7.1" height="15.0" fill="rgb(228,152,1)" rx="2" ry="2" />
+<text text-anchor="" x="656.96" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (30 samples, 1.29%)</title><rect x="694.0" y="165" width="15.2" height="15.0" fill="rgb(207,42,10)" rx="2" ry="2" />
+<text text-anchor="" x="696.98" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (362 samples, 15.54%)</title><rect x="14.6" y="197" width="183.4" height="15.0" fill="rgb(209,99,10)" rx="2" ry="2" />
+<text text-anchor="" x="17.56" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_TGETS (1 samples, 0.04%)</title><rect x="1189.5" y="325" width="0.5" height="15.0" fill="rgb(253,179,4)" rx="2" ry="2" />
+<text text-anchor="" x="1192.49" y="335.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_KSHORT (2 samples, 0.09%)</title><rect x="445.2" y="101" width="1.0" height="15.0" fill="rgb(243,8,19)" rx="2" ry="2" />
+<text text-anchor="" x="448.22" y="111.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_CALL (1 samples, 0.04%)</title><rect x="949.8" y="197" width="0.6" height="15.0" fill="rgb(224,213,41)" rx="2" ry="2" />
+<text text-anchor="" x="952.85" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (5 samples, 0.21%)</title><rect x="1166.7" y="261" width="2.5" height="15.0" fill="rgb(233,145,29)" rx="2" ry="2" />
+<text text-anchor="" x="1169.69" y="271.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (8 samples, 0.34%)</title><rect x="500.4" y="133" width="4.1" height="15.0" fill="rgb(209,72,13)" rx="2" ry="2" />
+<text text-anchor="" x="503.44" y="143.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ADDVV (19 samples, 0.82%)</title><rect x="521.7" y="149" width="9.6" height="15.0" fill="rgb(212,77,13)" rx="2" ry="2" />
+<text text-anchor="" x="524.72" y="159.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (2 samples, 0.09%)</title><rect x="1112.5" y="229" width="1.0" height="15.0" fill="rgb(243,199,22)" rx="2" ry="2" />
+<text text-anchor="" x="1115.48" y="239.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (20 samples, 0.86%)</title><rect x="449.8" y="117" width="10.1" height="15.0" fill="rgb(205,133,34)" rx="2" ry="2" />
+<text text-anchor="" x="452.78" y="127.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>__libc_start_main (377 samples, 16.19%)</title><rect x="10.0" y="469" width="191.0" height="15.0" fill="rgb(228,158,2)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="479.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >__libc_start_main</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,480 samples, 63.55%)</title><rect x="440.2" y="357" width="749.8" height="15.0" fill="rgb(223,180,1)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="367.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_vm_ffi_call (366 samples, 15.71%)</title><rect x="12.5" y="325" width="185.5" height="15.0" fill="rgb(243,183,28)" rx="2" ry="2" />
+<text text-anchor="" x="15.53" y="335.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj_vm_ffi_call</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (55 samples, 2.36%)</title><rect x="440.2" y="133" width="27.8" height="15.0" fill="rgb(213,51,39)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="143.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>c_payload (365 samples, 15.67%)</title><rect x="13.0" y="277" width="185.0" height="15.0" fill="rgb(249,13,26)" rx="2" ry="2" />
+<text text-anchor="" x="16.04" y="287.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >c_payload</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_ISGT (7 samples, 0.30%)</title><rect x="1114.5" y="229" width="3.6" height="15.0" fill="rgb(209,192,19)" rx="2" ry="2" />
+<text text-anchor="" x="1117.51" y="239.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_SUBVN (1 samples, 0.04%)</title><rect x="465.5" y="117" width="0.5" height="15.0" fill="rgb(210,14,53)" rx="2" ry="2" />
+<text text-anchor="" x="468.48" y="127.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>ffi.clib.__index (1 samples, 0.04%)</title><rect x="10.0" y="389" width="0.5" height="15.0" fill="rgb(245,144,11)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="399.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,174 samples, 50.41%)</title><rect x="440.2" y="213" width="594.8" height="15.0" fill="rgb(233,10,0)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="223.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_CALL (209 samples, 8.97%)</title><rect x="201.0" y="405" width="105.9" height="15.0" fill="rgb(206,208,18)" rx="2" ry="2" />
+<text text-anchor="" x="204.01" y="415.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj_BC_CALL</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,469 samples, 63.07%)</title><rect x="440.2" y="293" width="744.2" height="15.0" fill="rgb(229,184,12)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="303.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_SUBVN (8 samples, 0.34%)</title><rect x="1121.1" y="229" width="4.0" height="15.0" fill="rgb(232,227,47)" rx="2" ry="2" />
+<text text-anchor="" x="1124.09" y="239.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_RET1 (3 samples, 0.13%)</title><rect x="1119.6" y="229" width="1.5" height="15.0" fill="rgb(233,200,5)" rx="2" ry="2" />
+<text text-anchor="" x="1122.57" y="239.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,309 samples, 56.20%)</title><rect x="440.2" y="229" width="663.2" height="15.0" fill="rgb(207,71,51)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="239.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_paylo..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>run_embedded (472 samples, 20.27%)</title><rect x="201.0" y="437" width="239.2" height="15.0" fill="rgb(222,109,15)" rx="2" ry="2" />
+<text text-anchor="" x="204.01" y="447.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >run_embedded</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_GGET (11 samples, 0.47%)</title><rect x="648.4" y="165" width="5.6" height="15.0" fill="rgb(212,20,23)" rx="2" ry="2" />
+<text text-anchor="" x="651.39" y="175.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6 (1,480 samples, 63.55%)</title><rect x="440.2" y="389" width="749.8" height="15.0" fill="rgb(245,60,15)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="399.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >@/mnt/WorkDisk/share/dev/__tarantool/luajit-perf/.luaenv/share/luajit-2.1.0-beta3/lua_payload.lua:6</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>run_embedded (377 samples, 16.19%)</title><rect x="10.0" y="437" width="191.0" height="15.0" fill="rgb(213,227,50)" rx="2" ry="2" />
+<text text-anchor="" x="13.00" y="447.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >run_embedded</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lua_pcall (1,480 samples, 63.55%)</title><rect x="440.2" y="421" width="749.8" height="15.0" fill="rgb(223,49,50)" rx="2" ry="2" />
+<text text-anchor="" x="443.15" y="431.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lua_pcall</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (98 samples, 4.21%)</title><rect x="306.9" y="405" width="49.7" height="15.0" fill="rgb(224,72,19)" rx="2" ry="2" />
+<text text-anchor="" x="309.90" y="415.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lj_BC..</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_SUBVN (9 samples, 0.39%)</title><rect x="504.5" y="133" width="4.6" height="15.0" fill="rgb(222,44,38)" rx="2" ry="2" />
+<text text-anchor="" x="507.50" y="143.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (1 samples, 0.04%)</title><rect x="449.3" y="117" width="0.5" height="15.0" fill="rgb(217,83,16)" rx="2" ry="2" />
+<text text-anchor="" x="452.27" y="127.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lua_pcall (472 samples, 20.27%)</title><rect x="201.0" y="421" width="239.2" height="15.0" fill="rgb(234,198,41)" rx="2" ry="2" />
+<text text-anchor="" x="204.01" y="431.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  >lua_pcall</text>
+</g>
+<g class="func_g" onmouseover="s(this)" onmouseout="c()" onclick="zoom(this)">
+<title>lj_BC_IFUNCF (6 samples, 0.26%)</title><rect x="955.4" y="197" width="3.1" height="15.0" fill="rgb(237,153,10)" rx="2" ry="2" />
+<text text-anchor="" x="958.42" y="207.5" font-size="12" font-family="Verdana" fill="rgb(0,0,0)"  ></text>
+</g>
+</svg>

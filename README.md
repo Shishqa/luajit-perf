@@ -10,25 +10,25 @@ git checkout shishqa/test-suite
 git submodule update --init --recursive
 
 # 1. setup 
-./setup.sh
+./setup.sh  # sudo is needed to install parser
 
 # 2. run benchmark
 # here you can add options
-# -m [DEFAULT|LEAF|CALLGRAPH]     (profiling mode)
+# -m [default|leaf|callgraph]     (profiling mode)
 # -i <number>                     (profiling interval)
 # -j [on|off]                     (jit mode)
 # -o <path>                       (output file, default is sysprof.bin)
+# -s                              (start profiling immediately)
 #
 # to turn profiler on during running press Ctrl+C
 # to stop execution press Ctrl+\
 ./run.sh ./benchmarks/mixed-recursion.lua
 
 # 3. visualize results
-./parse.sh | flamegraph.pl > flamegraph.svg
+luajit-parse-sysprof [--split] <binary-file> | flamegraph.pl > flamegraph.svg
 ```
 
 ## TBD
 
-* lua stack dump
-* trace number dump
-* installation ?
+* fix lua dumping segfault
+* fix trace callchain dumping
