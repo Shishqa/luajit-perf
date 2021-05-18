@@ -1,5 +1,7 @@
 # Simple benchmark
 
+![flamegraph](./flamegraphs/example.svg)
+
 ## Usage
 
 ```bash
